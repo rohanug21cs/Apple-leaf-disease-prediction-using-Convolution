@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Title of HTML</title>
+    <style>
+        #container{
+            width: 400px;
+            height: 400px;
+            background: #99B898;
+            position: relative;
+            border: 2px solid slategrey;
+            border-radius: 10px;
+        }
+        #inside{
+            width: 50px;
+            height: 50px;
+            background: #FECEAB;
+            position: absolute;
+            border: 2px solid #ed8135;
+            border-radius: 10px;
+        }
+        #mydiv{
+            width: 100px;
+            height: 100px;
+            background-color: aquamarine;
+            border: 2px solid black;
+            border-radius: 10px;
+
+        }
+    </style>
+</head>
+<body>
+    <h1>Drop X Output  <span style="display: none;">Subscribe</span> </h1>
+    <div class="divhero" style="background-color: yellow; border: 2px solid black;">Lorem ipsum dolor sit amet consectetur adipisicing elit. Inventore reprehenderit distinctio, quidem eaque explicabo odio ipsam! 
+        Necessitatibus aut consequatur ab culpa quod, aperiam at expedita? Accusamus delectus expedita laboriosam dolore sint veritatis ea nesciunt vel amet libero natus earum,
+         nostrum porro tempora fugit, praesentium illum recusandae ullam. Velit, corporis sed!</div>
+    <div> Top 5 sigmas
+        <ul id="hero">
+            <li >Andrew Tate</li>
+            <li >Keanu Reeves</li>
+            <li class="hero">Johnny Bravo</li>
+            <li class="hero">Johnny Depp</li>
+            <li>Shinchan</li>
+        </ul>
+     </div>
+     <div id="herooo" about="hello"></div>
+
+     <div id="container">
+        <div id="inside"> </div>
+     </div>
+     <p><button onclick="myMove()">click</button></p>
+     <div id="mydiv" onmouseover="onMouseOver()" onmouseout="onMouseOut(this)" onmousedown="onMouseDown(this)" onmouseup="onMouseUp(this)"> <!--writing this to show another way of writing-->
+     </div>
+     <br>
+        <button id="btn" onclick="changeColor()" > change color </button>
+    <script src="Module7.js">
+    </script>
+</body>
+</html>
