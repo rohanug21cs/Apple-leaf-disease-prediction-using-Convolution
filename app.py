@@ -1,36 +1,87 @@
+import base64
+from PIL import Image
+from io import BytesIO
+from flask import Flask, render_template, request, redirect, url_for, flash, jsonify
+from werkzeug.utils import secure_filename
+import io
 import os
 import numpy as np
-from flask import Flask, request, render_template, jsonify
-from werkzeug.utils import secure_filename
+from threading import Lock
 import tensorflow as tf
-from tensorflow.keras.preprocessing import image
+
+class TFModel:
+    def __init__(self, dir_path) -> None:
+
+        self.model_dir = dir_path
+
+        self.inputs = {"Image": {"dtype": "float32", "shape": [None, 224, 224, 3], "name": "Image:0"}}
+        self.outputs = {"Confidences": {"dtype": "float32", "shape": [None, 6], "name": "sequential/dense_2/Softmax:0"}}
+        self.lock = Lock()
+        self.model = tf.saved_model.load(tags=["serve"], export_dir=self.model_dir)
+        self.predict_fn = self.model.signatures["serving_default"]
+
+    def predict(self, image: Image.Image) -> dict:
+        image = self.process_image(image, self.inputs.get("Image").get("shape"))
+        with self.lock:
+            feed_dict = {}
+            feed_dict[list(self.inputs.keys())[0]] = tf.convert_to_tensor(image)
+            outputs = self.predict_fn(**feed_dict)
+            return self.process_output(outputs)
+
+    def process_image(self, image, input_shape) -> np.ndarray:
+        width, height = image.size
+        if image.mode != "RGB":
+            image = image.convert("RGB")
+        # Centering and cropping image
+        if width != height:
+            square_size = min(width, height)
+            left = (width - square_size) / 2
+            top = (height - square_size) / 2
+            right = (width + square_size) / 2
+            bottom = (height + square_size) / 2
+
+            image = image.crop((left, top, right, bottom))
+        input_width, input_height = input_shape[1:3]
+        if image.width != input_width or image.height != input_height:
+            image = image.resize((input_width, input_height))
+        image = np.asarray(image) / 255.0
+
+        return np.expand_dims(image, axis=0).astype(np.float32)
+
+    def process_output(self, outputs) -> dict:
+        out_keys = ["label", "confidence"]
+        results = {}
+        for key, tf_val in outputs.items():
+            val = tf_val.numpy().tolist()[0]
+            if isinstance(val, bytes):
+                val = val.decode()
+            results[key] = val
+        confs = results["Confidences"]
+        labels = ['Alternaria',"Mosaic","Powdery Mildew","Scab"]
+        output = [dict(zip(out_keys, group)) for group in zip(labels, confs)]
+        sorted_output = {"predictions": sorted(output, key=lambda k: k["confidence"], reverse=True)}
+        return sorted_output
+
+def GetImageDetails(img_content):
+
+    image = Image.open(io.BytesIO(img_content))
+    dir_path = os.path.dirname(os.path.abspath(__file__))
+    model = TFModel(dir_path=dir_path)
+    outputs = model.predict(image)
+    max_confidence_prediction = outputs['predictions'][0]
+    label_with_max_confidence = max_confidence_prediction['label']
+    confidence_of_max_confidence = max_confidence_prediction['confidence']
+    if confidence_of_max_confidence >= 0.70:
+        return [label_with_max_confidence, round(confidence_of_max_confidence * 100, 2)]
+    else:
+        return [-1,-1]
 
 app = Flask(__name__)
-app.config['UPLOAD_FOLDER'] = 'uploads/'
+app.secret_key = 'roh10'
 
-# Load the saved model
-model = tf.saved_model.load(os.path.join(os.path.dirname(os.path.abspath(__file__)),'conversion'))
-
-def classify_image(img_path):
-    img = image.load_img(img_path, target_size=(224, 224))
-    img_array = image.img_to_array(img)
-    img_array = np.expand_dims(img_array, axis=0)
-    img_array = tf.keras.applications.mobilenet_v2.preprocess_input(img_array)
-    
-    # Assuming your model signature key is 'serving_default'
-    infer = model.signatures['serving_default']
-    predictions = infer(tf.convert_to_tensor(img_array))
-    
-    # Print the available keys in the predictions dictionary
-    print(predictions)
-    
-    # Use the correct key from the predictions dictionary
-    # Replace 'output_layer_name' with the actual output layer name from your model
-    predicted_class = np.argmax(predictions['Confidences'], axis=-1)
-    
-    # Assuming classes are [0: Disease Class 1, 1: Disease Class 2, ...]
-    classes = ['Alternaria',"Mosaic","Powdery Mildew","Scab"]
-    return classes[predicted_class[0]]
+def allowed_file(filename):
+    ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif'}
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
 
 @app.route('/')
@@ -39,26 +90,21 @@ def index():
 
 @app.route('/classify', methods=['POST'])
 def upload_image():
-    if 'file' not in request.files:
-        return jsonify({'error': 'No file part'})
-    
-    file = request.files['file']
-    
-    if file.filename == '':
-        return jsonify({'error': 'No selected file'})
-    
-    if file:
-        filename = secure_filename(file.filename)
-        file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-        file.save(file_path)
-        
-        classification_result = classify_image(file_path)
-        os.remove(file_path)  # Remove the uploaded file after classification
-        
-        return jsonify({'result': classification_result})
-    
-    return jsonify({'error': 'File upload failed'})
 
+    data = request.get_json()
+    image_data = base64.b64decode(data['image'])
+    image = Image.open(BytesIO(image_data))
+    dir_path = os.path.dirname(os.path.abspath(__file__))
+    model = TFModel(dir_path=dir_path)
+    outputs = model.predict(image)
+    max_confidence_prediction = outputs['predictions'][0]
+    label_with_max_confidence = max_confidence_prediction['label']
+    confidence_of_max_confidence = max_confidence_prediction['confidence']
+    if confidence_of_max_confidence >= 0.40:
+        return jsonify({'result': label_with_max_confidence}), 200
+    else:
+        return jsonify({'result': "Unable to Identify"}), 200
+    
+    
 if __name__ == '__main__':
-    os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
-    app.run(debug=True)
+    app.run(host='0.0.0.0', port=5000, debug=True)
